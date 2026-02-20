@@ -1,0 +1,1478 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoGabarito IA - Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    
+    <style>
+        /* Estilos Base e Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Elementos do Gabarito (Tela e Impressão) */
+        .print-circle {
+            border: 2px solid #000;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            color: #1e293b;
+            background-color: #fff;
+        }
+        
+        /* Tamanho Normal */
+        .layout-normal .print-circle { width: 26px; height: 26px; font-size: 13px; margin: 0 3px; }
+        
+        /* Tamanho Compacto (4 por folha) */
+        .layout-compact .print-circle { width: 16px; height: 16px; font-size: 8px; margin: 0 2px; border-width: 1px;}
+        
+        .print-marker {
+            background-color: black; 
+            position: absolute;
+        }
+
+        /* Grids de Impressão */
+        .print-grid-4 {
+            display: grid;
+            grid-template-columns: 50% 50%;
+            grid-template-rows: 50% 50%;
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+        }
+        .grid-item {
+            border: 1px dashed #ccc;
+            box-sizing: border-box;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .print-grid-1 {
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        /* Flash de captura da câmera */
+        @keyframes flash {
+            0% { background-color: rgba(255, 255, 255, 0.8); }
+            100% { background-color: rgba(255, 255, 255, 0); }
+        }
+        .camera-flash { animation: flash 0.3s ease-out; }
+
+        /* Lógica de Impressão */
+        @media print {
+            body * { visibility: hidden; }
+            .no-print { display: none !important; }
+            
+            body.printing-template #print-area, body.printing-template #print-area * { visibility: visible; }
+            body.printing-report #print-report-area, body.printing-report #print-report-area * { visibility: visible; }
+
+            #print-area, #print-report-area {
+                position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0;
+            }
+            
+            .page-break { page-break-after: always; break-after: page; padding: 0; }
+            .page-break:last-child { page-break-after: auto; break-after: auto; }
+
+            .print-grid-4, .print-grid-1 {
+                width: 210mm;
+                height: 297mm;
+            }
+            .grid-item { border: 1px dashed transparent; } /* Remove borda pontilhada no papel */
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen font-sans">
+
+    <!-- Header -->
+    <header class="bg-indigo-600 text-white shadow-md no-print">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <i data-lucide="check-square" class="w-8 h-8"></i>
+                <h1 class="text-2xl font-bold tracking-tight">AutoGabarito IA</h1>
+            </div>
+            <nav class="flex gap-1 bg-indigo-700/50 p-1 rounded-lg overflow-x-auto">
+                <button onclick="switchTab('template')" id="tab-template" class="px-4 py-2 rounded-md font-medium text-sm transition-colors bg-white text-indigo-700 shadow-sm whitespace-nowrap">Modelos & Turma</button>
+                <button onclick="switchTab('key')" id="tab-key" class="px-4 py-2 rounded-md font-medium text-sm transition-colors text-white hover:bg-indigo-600 whitespace-nowrap">Gabarito Oficial</button>
+                <button onclick="switchTab('scan')" id="tab-scan" class="px-4 py-2 rounded-md font-medium text-sm transition-colors text-white hover:bg-indigo-600 whitespace-nowrap">Corrigir Lote</button>
+                <button onclick="switchTab('report')" id="tab-report" class="px-4 py-2 rounded-md font-medium text-sm transition-colors text-white hover:bg-indigo-600 whitespace-nowrap hidden flex items-center gap-2"><i data-lucide="bar-chart-2" class="w-4 h-4"></i> Relatório</button>
+            </nav>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-8 no-print">
+        
+        <!-- Tab 1: Modelo de Gabarito e Turma -->
+        <section id="sec-template" class="animate-fade-in block">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Lista de Alunos -->
+                <div class="lg:col-span-1 space-y-6">
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col h-full min-h-[400px]">
+                        <h2 class="text-lg font-semibold text-slate-800 flex items-center gap-2 mb-2">
+                            <i data-lucide="users" class="w-5 h-5 text-indigo-600"></i>
+                            Lista de Alunos
+                        </h2>
+                        <p class="text-slate-500 text-xs mb-4">Cole a lista de alunos (um nome por linha) para gerar os gabaritos nominais com QR Code. A pré-visualização ao lado será atualizada na hora.</p>
+                        
+                        <!-- Controles de Turma Salva -->
+                        <div class="flex gap-2 mb-3 items-center bg-slate-50 p-2 rounded-lg border border-slate-200">
+                            <select id="saved-classes-select" onchange="handleClassSelection()" class="flex-1 px-2 py-1.5 border border-slate-300 rounded text-sm focus:ring-indigo-500 bg-white">
+                                <option value="">-- Turmas Salvas --</option>
+                            </select>
+                            <button onclick="saveCurrentClass()" class="p-1.5 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors" title="Salvar Turma Atual">
+                                <i data-lucide="save" class="w-4 h-4"></i>
+                            </button>
+                            <button onclick="deleteSelectedClass()" class="p-1.5 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors" title="Excluir Turma Selecionada">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+
+                        <textarea id="students-list" oninput="updateTemplatePreview()" class="flex-1 w-full p-3 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm resize-none" placeholder="Ex:\nJoão da Silva\nMaria Souza\nPedro Henrique"></textarea>
+                    </div>
+                </div>
+
+                <!-- Visualização e Impressão -->
+                <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
+                        <h2 class="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                            <i data-lucide="eye" class="w-5 h-5 text-indigo-600"></i>
+                            Pré-visualização
+                        </h2>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <label class="flex items-center gap-2 text-sm font-medium text-slate-700 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-200 transition-colors">
+                                <input type="checkbox" id="print-compact" onchange="updateTemplatePreview()" class="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500">
+                                Econômico (4 por página)
+                            </label>
+                            <div class="h-6 w-px bg-slate-300 hidden md:block"></div>
+                            <button onclick="printTemplates(false)" class="px-3 py-1.5 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50 transition-colors text-sm font-medium">
+                                Imprimir em Branco
+                            </button>
+                            <button onclick="printTemplates(true)" class="px-3 py-1.5 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors text-sm font-medium shadow-sm flex items-center gap-1">
+                                <i data-lucide="printer" class="w-4 h-4"></i> Imprimir Turma
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 border-2 border-dashed border-slate-300 rounded-xl p-4 md:p-8 bg-slate-50 flex justify-center overflow-x-auto items-start">
+                        <div id="template-preview" class="bg-white border border-slate-200 shadow-sm relative shrink-0"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab 2: Gabarito Oficial e Configuração -->
+        <section id="sec-key" class="animate-fade-in hidden">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 md:p-8 max-w-5xl mx-auto">
+                <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4 border-b border-slate-100 pb-4">
+                    <div>
+                        <h2 class="text-xl font-semibold text-slate-800 flex items-center gap-2">
+                            <i data-lucide="key" class="w-5 h-5 text-indigo-600"></i>
+                            Configuração e Gabarito Oficial
+                        </h2>
+                        <p class="text-slate-500 text-sm mt-1">Defina a quantidade, o tipo de cada questão e a resposta correta.</p>
+                    </div>
+                    <div class="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                        <label class="text-sm font-medium text-slate-700 whitespace-nowrap">Total de Questões:</label>
+                        <input type="number" id="num-questions" value="10" min="1" max="100" onchange="handleNumQuestionsChange()" class="w-20 px-2 py-1 border border-slate-300 rounded focus:ring-indigo-500 text-center">
+                    </div>
+                </div>
+
+                <form id="official-key-form" class="space-y-4">
+                    <div class="flex justify-end mb-2">
+                        <button type="button" onclick="saveOfficialKey()" class="px-5 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2 font-medium shadow-sm">
+                            <i data-lucide="save" class="w-4 h-4"></i> Salvar Gabarito Oficial
+                        </button>
+                    </div>
+                    
+                    <div id="official-key-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        <!-- Inputs generated by JS -->
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <!-- Tab 3: Escanear e Corrigir Lote -->
+        <section id="sec-scan" class="animate-fade-in hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Painel de Captura/Upload -->
+                <div class="lg:col-span-1 bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
+                    <h2 class="text-lg font-semibold text-slate-800 flex items-center gap-2 mb-4">
+                        <i data-lucide="scan-line" class="w-5 h-5 text-indigo-600"></i>
+                        Escanear Gabaritos
+                    </h2>
+
+                    <!-- Toggle Mode -->
+                    <div class="flex p-1 bg-slate-100 rounded-lg mb-4">
+                        <button onclick="setScanMode('camera')" id="btn-mode-camera" class="flex-1 py-1.5 text-sm font-medium rounded-md bg-white text-indigo-600 shadow-sm transition-all flex items-center justify-center gap-2">
+                            <i data-lucide="camera" class="w-4 h-4"></i> Câmera
+                        </button>
+                        <button onclick="setScanMode('upload')" id="btn-mode-upload" class="flex-1 py-1.5 text-sm font-medium rounded-md text-slate-600 hover:text-slate-800 transition-all flex items-center justify-center gap-2">
+                            <i data-lucide="upload-cloud" class="w-4 h-4"></i> Upload
+                        </button>
+                    </div>
+
+                    <!-- Modo Upload -->
+                    <div id="mode-upload-container" class="hidden flex-col flex-1">
+                        <div class="border-2 border-dashed border-indigo-200 bg-indigo-50/50 hover:bg-indigo-50 rounded-xl p-6 text-center cursor-pointer transition-colors relative mb-4" onclick="document.getElementById('file-upload').click()">
+                            <input type="file" id="file-upload" class="hidden" accept="image/*" multiple onchange="handleFiles(event)">
+                            <i data-lucide="images" class="w-10 h-10 text-indigo-400 mx-auto mb-2"></i>
+                            <p class="text-slate-700 font-medium text-sm mb-1">Adicionar Imagens</p>
+                            <p class="text-slate-500 text-xs">JPG, PNG (Pode selecionar várias)</p>
+                        </div>
+                        <button id="btn-process-manual" onclick="processQueue()" disabled class="w-full py-3 mt-auto bg-indigo-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2 shadow-sm">
+                            <i data-lucide="play-circle" class="w-5 h-5"></i> Iniciar Fila Manual
+                        </button>
+                    </div>
+
+                    <!-- Modo Câmera -->
+                    <div id="mode-camera-container" class="flex flex-col flex-1">
+                        <p class="text-slate-500 text-xs mb-2">Aponte para o gabarito. O QR Code dispara a captura automática.</p>
+                        <div class="relative bg-black rounded-xl overflow-hidden aspect-[3/4] flex items-center justify-center mb-4 border border-slate-200">
+                            <video id="camera-video" class="absolute inset-0 w-full h-full object-cover" playsinline></video>
+                            
+                            <!-- Overlay de alinhamento e flash -->
+                            <div id="camera-overlay" class="absolute inset-0 border-4 border-dashed border-white/40 m-6 rounded pointer-events-none transition-colors duration-300"></div>
+                            
+                            <button id="btn-start-camera" onclick="startCamera()" class="z-10 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg shadow-lg font-medium flex items-center gap-2">
+                                <i data-lucide="camera" class="w-5 h-5"></i> Ligar Câmera
+                            </button>
+                            
+                            <button id="btn-stop-camera" onclick="stopCamera()" class="absolute top-2 right-2 z-10 bg-black/50 hover:bg-red-500 text-white p-2 rounded-full hidden transition-colors">
+                                <i data-lucide="power" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                        <button id="btn-manual-capture" onclick="captureFrame(true)" class="w-full py-3 bg-slate-800 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2 shadow-sm mt-auto hidden hover:bg-slate-700">
+                            <i data-lucide="focus" class="w-5 h-5"></i> Forçar Captura (Sem QR)
+                        </button>
+                    </div>
+
+                    <div class="flex items-center justify-between text-sm mt-4 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                        <span class="text-slate-600 font-medium">Gabarito Oficial:</span>
+                        <span id="key-status-badge" class="px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700">Pendente</span>
+                    </div>
+                </div>
+
+                <!-- Process Queue -->
+                <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-[600px]">
+                    <div class="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-xl">
+                        <h2 class="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                            <i data-lucide="list-checks" class="w-5 h-5 text-emerald-600"></i>
+                            Fila de Correção em Tempo Real
+                        </h2>
+                        <div class="flex gap-2 items-center">
+                            <span id="queue-counter" class="text-xs font-medium text-slate-500 bg-white px-2 py-1 rounded border border-slate-200">0 na fila</span>
+                            <button onclick="showReportTab()" class="hidden text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded font-medium hover:bg-indigo-200 transition-colors" id="btn-jump-report">Ver Relatório</button>
+                        </div>
+                    </div>
+                    
+                    <div class="p-0 flex-1 overflow-y-auto">
+                        <div id="batch-empty" class="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
+                            <i data-lucide="inbox" class="w-16 h-16 mb-4 opacity-50"></i>
+                            <p>As provas capturadas aparecerão aqui e serão corrigidas automaticamente.</p>
+                        </div>
+                        <ul id="batch-list" class="divide-y divide-slate-100 hidden">
+                            <!-- Items injected via JS -->
+                        </ul>
+                    </div>
+                    
+                    <div id="batch-summary" class="hidden p-3 border-t border-slate-100 bg-indigo-50 text-indigo-800 text-sm font-medium flex justify-between items-center rounded-b-xl">
+                        <div class="flex items-center gap-2">
+                            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+                            <span id="summary-text">A IA está processando as provas...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab 4: Relatório da Turma -->
+        <section id="sec-report" class="animate-fade-in hidden">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-center">
+                    <span class="text-slate-500 text-xs font-medium uppercase tracking-wider mb-1">Total Avaliados</span>
+                    <div class="flex items-baseline gap-2"><span id="stat-total-students" class="text-3xl font-bold text-slate-800">0</span></div>
+                </div>
+                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-center">
+                    <span class="text-slate-500 text-xs font-medium uppercase tracking-wider mb-1">Média da Turma</span>
+                    <div class="flex items-baseline gap-2"><span id="stat-avg-score" class="text-3xl font-bold text-indigo-600">0%</span></div>
+                </div>
+                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-center">
+                    <span class="text-slate-500 text-xs font-medium uppercase tracking-wider mb-1 text-emerald-600">Questão Mais Acertada</span>
+                    <div class="flex flex-col"><span id="stat-best-q" class="text-2xl font-bold text-slate-800">-</span><span id="stat-best-q-val" class="text-xs text-slate-500"></span></div>
+                </div>
+                <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col justify-center">
+                    <span class="text-slate-500 text-xs font-medium uppercase tracking-wider mb-1 text-red-600">Questão Mais Errada</span>
+                    <div class="flex flex-col"><span id="stat-worst-q" class="text-2xl font-bold text-slate-800">-</span><span id="stat-worst-q-val" class="text-xs text-slate-500"></span></div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-4 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between bg-slate-50 gap-4">
+                    <h2 class="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                        <i data-lucide="trophy" class="w-5 h-5 text-amber-500"></i>
+                        Ranking e Notas
+                    </h2>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button onclick="exportBackup()" class="px-3 py-1.5 bg-indigo-100 text-indigo-700 text-sm font-medium rounded-md hover:bg-indigo-200 transition-colors flex items-center gap-2">
+                            <i data-lucide="download" class="w-4 h-4"></i> Backup
+                        </button>
+                        <label class="px-3 py-1.5 bg-indigo-100 text-indigo-700 text-sm font-medium rounded-md hover:bg-indigo-200 transition-colors flex items-center gap-2 cursor-pointer mb-0">
+                            <i data-lucide="upload" class="w-4 h-4"></i> Restaurar
+                            <input type="file" class="hidden" accept=".json" onchange="importBackup(event)">
+                        </label>
+                        <div class="h-6 w-px bg-slate-300 mx-1 hidden md:block"></div>
+                        <button onclick="printFinalReport()" class="px-4 py-1.5 bg-slate-800 text-white text-sm rounded-md hover:bg-slate-700 transition-colors flex items-center gap-2">
+                            <i data-lucide="printer" class="w-4 h-4"></i> Exportar PDF
+                        </button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm whitespace-nowrap">
+                        <thead class="bg-white border-b border-slate-200 text-slate-500 uppercase text-xs tracking-wider">
+                            <tr>
+                                <th class="p-4 font-medium w-16 text-center">Pos</th>
+                                <th class="p-4 font-medium">Nome do Aluno</th>
+                                <th class="p-4 font-medium text-center">Acertos</th>
+                                <th class="p-4 font-medium text-center">Nota (%)</th>
+                                <th class="p-4 font-medium text-right w-32">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ranking-table-body" class="divide-y divide-slate-100">
+                        </tbody>
+                    </table>
+                    <div id="report-empty" class="text-center p-8 text-slate-500 hidden">
+                        Nenhum aluno processado ainda.
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal Detalhes do Aluno -->
+    <div id="modal-details" class="fixed inset-0 bg-slate-900/50 hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
+            <div class="p-4 border-b border-slate-100 flex justify-between items-center">
+                <h3 class="font-bold text-lg" id="modal-student-name">Nome do Aluno</h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-4 bg-slate-50 flex justify-between text-sm font-medium border-b border-slate-100">
+                <span>Nota: <span id="modal-student-score" class="font-bold"></span></span>
+                <span>Acertos: <span id="modal-student-correct"></span></span>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4">
+                <table class="w-full text-sm text-center">
+                    <thead class="text-xs text-slate-500 bg-slate-100 rounded">
+                        <tr>
+                            <th class="py-2 rounded-l">Q.</th>
+                            <th class="py-2">Gabarito</th>
+                            <th class="py-2">Lida (IA)</th>
+                            <th class="py-2 rounded-r">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="modal-details-body" class="divide-y divide-slate-100">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Customizado de Prompt -->
+    <div id="modal-prompt" class="fixed inset-0 bg-slate-900/50 hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-sm flex flex-col p-6 animate-fade-in">
+            <h3 class="font-bold text-lg mb-2 text-slate-800" id="modal-prompt-title">Nome da Turma</h3>
+            <input type="text" id="modal-prompt-input" class="w-full p-2.5 border border-slate-300 rounded mb-6 focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm" placeholder="Ex: 3º Ano B">
+            <div class="flex justify-end gap-3">
+                <button onclick="closePromptModal()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors font-medium text-sm">Cancelar</button>
+                <button onclick="confirmPromptModal()" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm shadow-sm">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Customizado de Confirmação -->
+    <div id="modal-confirm" class="fixed inset-0 bg-slate-900/50 hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-sm flex flex-col p-6 animate-fade-in">
+            <h3 class="font-bold text-lg mb-2 text-slate-800 flex items-center gap-2"><i data-lucide="alert-triangle" class="w-5 h-5 text-amber-500"></i> Confirmação</h3>
+            <p id="modal-confirm-message" class="text-slate-600 mb-6 text-sm"></p>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeConfirmModal()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors font-medium text-sm">Cancelar</button>
+                <button onclick="executeConfirmModal()" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium text-sm shadow-sm">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Áreas Ocultas para Impressão -->
+    <div id="print-area" class="no-print"></div>
+    <div id="print-report-area" class="no-print bg-white p-8">
+        <div class="text-center mb-6 border-b-2 border-slate-800 pb-4">
+            <h1 class="text-2xl font-bold uppercase mb-2">Relatório de Desempenho da Turma</h1>
+            <div class="flex justify-between text-sm mt-4">
+                <div><strong>Data:</strong> <span id="print-report-date"></span></div>
+                <div><strong>Total de Alunos:</strong> <span id="print-report-count"></span></div>
+                <div><strong>Média Geral:</strong> <span id="print-report-avg"></span></div>
+            </div>
+        </div>
+        <table class="w-full text-left border-collapse text-sm">
+            <thead>
+                <tr class="bg-slate-100 border-b-2 border-slate-400">
+                    <th class="p-2 font-semibold text-center w-12">Pos</th>
+                    <th class="p-2 font-semibold">Aluno</th>
+                    <th class="p-2 font-semibold text-center w-24">Acertos</th>
+                    <th class="p-2 font-semibold text-center w-24">Nota Final</th>
+                </tr>
+            </thead>
+            <tbody id="print-report-body" class="divide-y divide-slate-300">
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Hidden Canvas -->
+    <canvas id="qr-canvas" class="hidden"></canvas>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-4 right-4 transform translate-y-20 opacity-0 transition-all duration-300 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 z-50">
+        <div id="toast-icon-container"><i data-lucide="info" class="w-5 h-5 text-indigo-400"></i></div>
+        <span id="toast-message" class="text-sm font-medium"></span>
+    </div>
+
+    <script>
+        // --- Constantes e Globais ---
+        const apiKey = ""; 
+        const QUESTION_TYPES = {
+            'MC5': { label: 'Múltipla Escolha (A-E)', options: ['A','B','C','D','E'] },
+            'MC4': { label: 'Múltipla Escolha (A-D)', options: ['A','B','C','D'] },
+            'TF':  { label: 'Verdadeiro / Falso (V/F)', options: ['V','F'] }
+        };
+        
+        let appState = {
+            numQuestions: 10,
+            officialKey: {},
+            batchFiles: [],
+            savedClasses: {}, // Nova propriedade para as turmas salvas
+            scannedQRs: new Set(), // Evita escanear a mesma folha várias vezes via câmera
+            isProcessingQueue: false
+        };
+
+        // Camera Globals
+        let videoEl;
+        let scanCanvasCtx;
+        let reqAnimFrameId;
+
+        // --- Inicialização ---
+        document.addEventListener('DOMContentLoaded', () => {
+            videoEl = document.getElementById('camera-video');
+            const scanCanvas = document.createElement('canvas');
+            scanCanvasCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
+
+            loadLocalData();
+            initConfig();
+            lucide.createIcons();
+            renderOfficialKeyInputs();
+            renderClassDropdown(); // Renderiza turmas carregadas
+            updateTemplatePreview();
+            checkReadyState();
+            
+            // Popula QR Scanneados pra não repetir após recarregar página
+            appState.batchFiles.forEach(f => {
+                if(f.name && f.status !== 'error') appState.scannedQRs.add(f.name);
+            });
+        });
+
+        function saveDataLocally() {
+            try {
+                const stateToSave = {
+                    numQuestions: appState.numQuestions,
+                    officialKey: appState.officialKey,
+                    savedClasses: appState.savedClasses, // Salva as turmas
+                    batchFiles: appState.batchFiles.map(f => ({ ...f, base64: null, file: null })) // Remove imagens para caber no limite local
+                };
+                localStorage.setItem('autoGabaritoData', JSON.stringify(stateToSave));
+            } catch (e) {
+                console.error("Erro ao salvar localmente", e);
+            }
+        }
+
+        function loadLocalData() {
+            const saved = localStorage.getItem('autoGabaritoData');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    appState.numQuestions = parsed.numQuestions || 10;
+                    appState.officialKey = parsed.officialKey || {};
+                    appState.savedClasses = parsed.savedClasses || {}; // Carrega as turmas
+                    appState.batchFiles = parsed.batchFiles || [];
+                    document.getElementById('num-questions').value = appState.numQuestions;
+                    
+                    if(appState.batchFiles.length > 0) {
+                        document.getElementById('tab-report').classList.remove('hidden');
+                        document.getElementById('tab-report').classList.add('flex');
+                        renderReport();
+                        renderBatchList();
+                    }
+                } catch(e) { console.error("Erro ao carregar dados", e); }
+            }
+        }
+
+        function exportBackup() {
+            const stateToSave = {
+                numQuestions: appState.numQuestions,
+                officialKey: appState.officialKey,
+                savedClasses: appState.savedClasses, // Inclui no backup
+                batchFiles: appState.batchFiles.map(f => ({ ...f, base64: null, file: null }))
+            };
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(stateToSave));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", `autogabarito_backup_${new Date().toISOString().split('T')[0]}.json`);
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+            showToast("Backup exportado com sucesso!", "success");
+        }
+
+        function importBackup(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    if(parsed.numQuestions && parsed.officialKey) {
+                        appState.numQuestions = parsed.numQuestions;
+                        appState.officialKey = parsed.officialKey;
+                        appState.savedClasses = parsed.savedClasses || {}; // Restaura turmas
+                        appState.batchFiles = parsed.batchFiles || [];
+                        appState.scannedQRs = new Set();
+                        appState.batchFiles.forEach(f => { if(f.name) appState.scannedQRs.add(f.name); });
+                        saveDataLocally();
+                        
+                        document.getElementById('num-questions').value = appState.numQuestions;
+                        renderOfficialKeyInputs();
+                        renderClassDropdown(); // Atualiza UI de turmas
+                        updateTemplatePreview();
+                        renderReport();
+                        renderBatchList();
+                        checkReadyState();
+                        
+                        showToast("Backup importado com sucesso!", "success");
+                        if(appState.batchFiles.some(f => f.status === 'success')) showReportTab();
+                    } else { showToast("Arquivo de backup inválido.", "error"); }
+                } catch (err) { showToast("Erro ao ler backup.", "error"); }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        function initConfig() {
+            for(let i=1; i<=appState.numQuestions; i++) {
+                if(!appState.officialKey[i]) appState.officialKey[i] = { type: 'MC5', answer: '' };
+            }
+        }
+
+        function handleNumQuestionsChange() {
+            const val = parseInt(document.getElementById('num-questions').value);
+            if(val > 0 && val <= 100) {
+                appState.numQuestions = val;
+                initConfig(); 
+                renderOfficialKeyInputs();
+                updateTemplatePreview();
+                checkReadyState();
+                saveDataLocally();
+            }
+        }
+
+        // --- Modais Customizados ---
+        let promptCallback = null;
+        function openPromptModal(title, placeholder, callback) {
+            document.getElementById('modal-prompt-title').textContent = title;
+            document.getElementById('modal-prompt-input').placeholder = placeholder;
+            document.getElementById('modal-prompt-input').value = '';
+            document.getElementById('modal-prompt').classList.remove('hidden');
+            document.getElementById('modal-prompt').classList.add('flex');
+            promptCallback = callback;
+            setTimeout(() => document.getElementById('modal-prompt-input').focus(), 100);
+        }
+        function closePromptModal() {
+            document.getElementById('modal-prompt').classList.add('hidden');
+            document.getElementById('modal-prompt').classList.remove('flex');
+            promptCallback = null;
+        }
+        function confirmPromptModal() {
+            const val = document.getElementById('modal-prompt-input').value;
+            if(promptCallback) promptCallback(val);
+            closePromptModal();
+        }
+
+        let confirmCallback = null;
+        function openConfirmModal(message, callback) {
+            document.getElementById('modal-confirm-message').textContent = message;
+            document.getElementById('modal-confirm').classList.remove('hidden');
+            document.getElementById('modal-confirm').classList.add('flex');
+            confirmCallback = callback;
+        }
+        function closeConfirmModal() {
+            document.getElementById('modal-confirm').classList.add('hidden');
+            document.getElementById('modal-confirm').classList.remove('flex');
+            confirmCallback = null;
+        }
+        function executeConfirmModal() {
+            if(confirmCallback) confirmCallback();
+            closeConfirmModal();
+        }
+
+        // --- Gerenciamento de Turmas Salvas ---
+        function renderClassDropdown() {
+            const select = document.getElementById('saved-classes-select');
+            const currentVal = select.value;
+            select.innerHTML = '<option value="">-- Turmas Salvas --</option>';
+            for (const className in appState.savedClasses) {
+                const opt = document.createElement('option');
+                opt.value = className;
+                opt.textContent = className;
+                select.appendChild(opt);
+            }
+            if (appState.savedClasses[currentVal]) select.value = currentVal;
+        }
+
+        function handleClassSelection() {
+            const select = document.getElementById('saved-classes-select');
+            const className = select.value;
+            if (className && appState.savedClasses[className]) {
+                document.getElementById('students-list').value = appState.savedClasses[className];
+                updateTemplatePreview();
+                showToast(`Turma "${className}" carregada.`, 'info');
+            } else if (!className) {
+                document.getElementById('students-list').value = '';
+                updateTemplatePreview();
+            }
+        }
+
+        function saveCurrentClass() {
+            const listVal = document.getElementById('students-list').value.trim();
+            if (!listVal) {
+                showToast("A lista de alunos está vazia.", "warning");
+                return;
+            }
+            openPromptModal("Salvar Turma", "Digite um nome (ex: 3º Ano A)", (className) => {
+                if (className && className.trim() !== "") {
+                    appState.savedClasses[className.trim()] = listVal;
+                    saveDataLocally();
+                    renderClassDropdown();
+                    document.getElementById('saved-classes-select').value = className.trim();
+                    showToast(`Turma "${className}" salva com sucesso!`, 'success');
+                }
+            });
+        }
+
+        function deleteSelectedClass() {
+            const select = document.getElementById('saved-classes-select');
+            const className = select.value;
+            if (!className) {
+                showToast("Selecione uma turma para excluir.", "warning");
+                return;
+            }
+            openConfirmModal(`Tem certeza que deseja excluir a turma "${className}"?`, () => {
+                delete appState.savedClasses[className];
+                saveDataLocally();
+                renderClassDropdown();
+                document.getElementById('students-list').value = '';
+                updateTemplatePreview();
+                showToast("Turma excluída.", "info");
+            });
+        }
+
+        // --- Navegação ---
+        function switchTab(tabId) {
+            ['template', 'key', 'scan', 'report'].forEach(id => {
+                document.getElementById(`sec-${id}`).classList.add('hidden');
+                document.getElementById(`tab-${id}`).classList.remove('bg-white', 'text-indigo-700', 'shadow-sm');
+                document.getElementById(`tab-${id}`).classList.add('text-white', 'hover:bg-indigo-600');
+            });
+            document.getElementById(`sec-${tabId}`).classList.remove('hidden');
+            document.getElementById(`tab-${tabId}`).classList.remove('text-white', 'hover:bg-indigo-600');
+            document.getElementById(`tab-${tabId}`).classList.add('bg-white', 'text-indigo-700', 'shadow-sm');
+            
+            if(tabId === 'report') renderReport();
+            if(tabId !== 'scan') stopCamera(); // Desliga a câmera caso mude de aba
+        }
+
+        function showReportTab() {
+            document.getElementById('tab-report').classList.remove('hidden');
+            switchTab('report');
+        }
+
+        function setScanMode(mode) {
+            const btnCam = document.getElementById('btn-mode-camera');
+            const btnUp = document.getElementById('btn-mode-upload');
+            const contCam = document.getElementById('mode-camera-container');
+            const contUp = document.getElementById('mode-upload-container');
+
+            if(mode === 'camera') {
+                btnCam.className = "flex-1 py-1.5 text-sm font-medium rounded-md bg-white text-indigo-600 shadow-sm transition-all flex items-center justify-center gap-2";
+                btnUp.className = "flex-1 py-1.5 text-sm font-medium rounded-md text-slate-600 hover:text-slate-800 transition-all flex items-center justify-center gap-2";
+                contCam.classList.remove('hidden');
+                contCam.classList.add('flex');
+                contUp.classList.add('hidden');
+                contUp.classList.remove('flex');
+            } else {
+                btnUp.className = "flex-1 py-1.5 text-sm font-medium rounded-md bg-white text-indigo-600 shadow-sm transition-all flex items-center justify-center gap-2";
+                btnCam.className = "flex-1 py-1.5 text-sm font-medium rounded-md text-slate-600 hover:text-slate-800 transition-all flex items-center justify-center gap-2";
+                contUp.classList.remove('hidden');
+                contUp.classList.add('flex');
+                contCam.classList.add('hidden');
+                contCam.classList.remove('flex');
+                stopCamera();
+            }
+        }
+
+        // --- Tab 1: Layout e Impressão BLINDADA ---
+        function generateSingleHTMLPage(nameText, qrContainerId, isCompact = false) {
+            const layoutClass = isCompact ? 'layout-compact' : 'layout-normal';
+            const finalQrId = qrContainerId || ('qr-empty-' + Math.random().toString(36).substr(2, 5));
+            
+            // Margens seguras grandes o suficiente para não colidir com o marcador (10px x 10px)
+            const safePadding = isCompact ? '28px 24px' : '48px 40px';
+            const markerSize = isCompact ? '8px' : '10px';
+            
+            let html = `
+                <div class="relative bg-white text-black w-full h-full ${layoutClass} box-border" style="padding: ${safePadding};">
+                    <!-- Marcadores estáticos isolados nos cantos -->
+                    <div class="print-marker" style="top: 10px; left: 10px; width: ${markerSize}; height: ${markerSize};"></div>
+                    <div class="print-marker" style="top: 10px; right: 10px; width: ${markerSize}; height: ${markerSize};"></div>
+                    <div class="print-marker" style="bottom: 10px; left: 10px; width: ${markerSize}; height: ${markerSize};"></div>
+                    <div class="print-marker" style="bottom: 10px; right: 10px; width: ${markerSize}; height: ${markerSize};"></div>
+
+                    <!-- mt-2 adicional para afastar do teto nas páginas normais -->
+                    <div class="flex items-start justify-between border-slate-800 border-b-2 mb-4 pb-2 mt-2">
+                        <div class="flex-1 pr-2 min-w-0">
+                            <h1 class="font-bold uppercase mb-1 tracking-wider ${isCompact ? 'text-[11px]' : 'text-2xl'}">Folha de Respostas</h1>
+                            <div class="flex items-end mb-1 ${isCompact ? 'text-[10px]' : 'text-lg'} w-full">
+                                <strong class="mr-1">Aluno:</strong> 
+                                <div class="flex-1 border-b border-black uppercase font-bold text-ellipsis overflow-hidden whitespace-nowrap pb-px" style="min-width: 0;">
+                                    ${nameText || '&nbsp;'}
+                                </div>
+                            </div>
+                            <div class="text-slate-800 mt-1.5 border border-slate-400 bg-slate-50 ${isCompact ? 'text-[7px] leading-tight p-1' : 'text-xs p-1.5'}">
+                                <strong>INSTRUÇÕES:</strong> Preencha a bolinha (⚫) ou um X simples (❌).
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-center justify-center border border-slate-300 bg-white shrink-0 ml-2" id="${finalQrId}" style="width: ${isCompact? '45px':'90px'}; height: ${isCompact? '45px':'90px'}; padding: 2px;">
+                            ${!nameText ? `<div class="text-slate-300 text-center ${isCompact ? 'text-[7px]' : 'text-xs'} font-medium leading-tight">QR Code</div>` : ''}
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-x-4 gap-y-2 px-1 mt-2">
+            `;
+
+            for (let i = 1; i <= appState.numQuestions; i++) {
+                const qType = appState.officialKey[i] ? appState.officialKey[i].type : 'MC5';
+                const optionsLetters = QUESTION_TYPES[qType].options;
+                html += `
+                    <div class="flex items-center justify-between border-b border-slate-300 py-1">
+                        <span class="font-bold w-5 text-right pr-1 ${isCompact ? 'text-[10px]' : 'text-lg'}">${i}.</span>
+                        <div class="flex gap-1 justify-end flex-1">
+                            ${optionsLetters.map(opt => `<div class="print-circle">${opt}</div>`).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            html += `</div></div>`;
+            return html;
+        }
+
+        function updateTemplatePreview() {
+            const isCompact = document.getElementById('print-compact').checked;
+            const previewDiv = document.getElementById('template-preview');
+            const listVal = document.getElementById('students-list').value;
+            const names = listVal.split('\n').map(n => n.trim()).filter(n => n.length > 0);
+            
+            const n1 = names[0] || ""; const n2 = names[1] || ""; const n3 = names[2] || ""; const n4 = names[3] || "";
+            
+            previewDiv.className = "bg-white border border-slate-300 shadow-sm relative shrink-0";
+            previewDiv.style.width = "210mm";
+            previewDiv.style.height = "297mm";
+
+            if (isCompact) {
+                previewDiv.innerHTML = `
+                    <div class="print-grid-4 w-full h-full">
+                        <div class="grid-item">${generateSingleHTMLPage(n1, 'qr-prev-1', true)}</div>
+                        <div class="grid-item">${generateSingleHTMLPage(n2, 'qr-prev-2', true)}</div>
+                        <div class="grid-item">${generateSingleHTMLPage(n3, 'qr-prev-3', true)}</div>
+                        <div class="grid-item">${generateSingleHTMLPage(n4, 'qr-prev-4', true)}</div>
+                    </div>
+                `;
+                if(n1) setTimeout(() => createQR('qr-prev-1', n1, 40), 0);
+                if(n2) setTimeout(() => createQR('qr-prev-2', n2, 40), 0);
+                if(n3) setTimeout(() => createQR('qr-prev-3', n3, 40), 0);
+                if(n4) setTimeout(() => createQR('qr-prev-4', n4, 40), 0);
+            } else {
+                previewDiv.innerHTML = `<div class="print-grid-1 w-full h-full">${generateSingleHTMLPage(n1, 'qr-prev-1', false)}</div>`;
+                if(n1) setTimeout(() => createQR('qr-prev-1', n1, 85), 0);
+            }
+        }
+
+        function printTemplates(isBatch) {
+            const isCompact = document.getElementById('print-compact').checked;
+            const printArea = document.getElementById('print-area');
+            printArea.innerHTML = ''; // Limpa área
+            
+            let namesToPrint = []; 
+            const listVal = document.getElementById('students-list').value;
+            const parsedNames = listVal.split('\n').map(n => n.trim()).filter(n => n.length > 0);
+
+            if (isBatch && parsedNames.length > 0) {
+                namesToPrint = parsedNames;
+            } else if (isBatch && parsedNames.length === 0) {
+                showToast("Lista vazia. Imprimindo em branco.", "warning");
+                namesToPrint = isCompact ? ["", "", "", ""] : [""];
+            } else {
+                // Modo não-batch (imprimir em branco)
+                namesToPrint = isCompact ? ["", "", "", ""] : [""];
+            }
+
+            if (isCompact) {
+                for (let i = 0; i < namesToPrint.length; i += 4) {
+                    const chunk = namesToPrint.slice(i, i + 4);
+                    const page = document.createElement('div');
+                    page.className = 'page-break print-grid-4';
+                    
+                    for(let idx = 0; idx < 4; idx++) {
+                        const name = chunk[idx];
+                        const cell = document.createElement('div');
+                        cell.className = 'grid-item';
+                        if (name !== undefined) {
+                            const globalIdx = i + idx;
+                            const safeId = `qr-print-${globalIdx}`;
+                            cell.innerHTML = generateSingleHTMLPage(name, safeId, true);
+                            if (name) setTimeout(() => createQR(safeId, name, 40), 0);
+                        } else { cell.style.border = "none"; }
+                        page.appendChild(cell);
+                    }
+                    printArea.appendChild(page);
+                }
+            } else {
+                namesToPrint.forEach((name, index) => {
+                    const page = document.createElement('div');
+                    page.className = 'page-break print-grid-1';
+                    const safeId = `qr-print-${index}`;
+                    page.innerHTML = generateSingleHTMLPage(name, safeId, false);
+                    printArea.appendChild(page);
+                    if (name) setTimeout(() => createQR(safeId, name, 85), 0);
+                });
+            }
+
+            // Aguarda os QRs serem processados pela biblioteca para disparar a janela de impressão
+            setTimeout(() => {
+                document.body.classList.add('printing-template');
+                window.print();
+                document.body.classList.remove('printing-template');
+            }, 600); 
+        }
+        
+        function createQR(elementId, text, size) {
+            const container = document.getElementById(elementId);
+            if(container) {
+                container.innerHTML = '';
+                new QRCode(container, {
+                    text: text, width: size, height: size,
+                    colorDark : "#000000", colorLight : "#ffffff", correctLevel : QRCode.CorrectLevel.M
+                });
+            }
+        }
+
+        // --- Tab 2: Gabarito Oficial ---
+        function renderOfficialKeyInputs() {
+            const grid = document.getElementById('official-key-grid');
+            grid.innerHTML = '';
+
+            for (let i = 1; i <= appState.numQuestions; i++) {
+                const qData = appState.officialKey[i] || { type: 'MC5', answer: '' };
+                let typeOptionsHtml = '';
+                for (const [tKey, tData] of Object.entries(QUESTION_TYPES)) {
+                    typeOptionsHtml += `<option value="${tKey}" ${qData.type === tKey ? 'selected' : ''}>${tData.label}</option>`;
+                }
+
+                const possibleAnswers = QUESTION_TYPES[qData.type].options;
+                let ansOptionsHtml = `<option value="">-</option>`;
+                possibleAnswers.forEach(opt => {
+                    ansOptionsHtml += `<option value="${opt}" ${qData.answer === opt ? 'selected' : ''}>${opt}</option>`;
+                });
+
+                const div = document.createElement('div');
+                div.className = "flex flex-col bg-slate-50 p-3 rounded-lg border border-slate-200 shadow-sm";
+                div.innerHTML = `
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-bold text-slate-700 bg-slate-200 px-2 py-0.5 rounded text-xs">Q${i}</span>
+                    </div>
+                    <label class="text-[10px] uppercase font-bold text-slate-500 mb-1">Tipo da Questão</label>
+                    <select id="type-${i}" onchange="handleTypeChange(${i})" class="w-full px-2 py-1.5 mb-2 bg-white border border-slate-300 rounded text-xs focus:ring-indigo-500">
+                        ${typeOptionsHtml}
+                    </select>
+                    <label class="text-[10px] uppercase font-bold text-slate-500 mb-1">Resposta Correta</label>
+                    <select id="key-${i}" class="w-full px-2 py-1.5 bg-white border border-slate-300 rounded font-bold text-sm text-indigo-700 focus:ring-indigo-500">
+                        ${ansOptionsHtml}
+                    </select>
+                `;
+                grid.appendChild(div);
+            }
+        }
+
+        function handleTypeChange(qIndex) {
+            const typeSelect = document.getElementById(`type-${qIndex}`);
+            const ansSelect = document.getElementById(`key-${qIndex}`);
+            const newType = typeSelect.value;
+            appState.officialKey[qIndex].type = newType;
+            appState.officialKey[qIndex].answer = ''; 
+            
+            const possibleAnswers = QUESTION_TYPES[newType].options;
+            let ansOptionsHtml = `<option value="">-</option>`;
+            possibleAnswers.forEach(opt => { ansOptionsHtml += `<option value="${opt}">${opt}</option>`; });
+            ansSelect.innerHTML = ansOptionsHtml;
+            updateTemplatePreview(); 
+            saveDataLocally();
+        }
+
+        function saveOfficialKey() {
+            let complete = true;
+            for (let i = 1; i <= appState.numQuestions; i++) {
+                const typeVal = document.getElementById(`type-${i}`).value;
+                const ansVal = document.getElementById(`key-${i}`).value;
+                if (!ansVal) complete = false;
+                appState.officialKey[i] = { type: typeVal, answer: ansVal };
+            }
+            saveDataLocally();
+            if (!complete) showToast("Salvo. Algumas respostas estão em branco.", "warning");
+            else showToast("Gabarito configurado com sucesso!", "success");
+            checkReadyState();
+            switchTab('scan');
+        }
+
+        // --- Câmera e Auto-Scan Lógica ---
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } } 
+                });
+                videoEl.srcObject = stream;
+                videoEl.play();
+                document.getElementById('btn-start-camera').classList.add('hidden');
+                document.getElementById('btn-stop-camera').classList.remove('hidden');
+                document.getElementById('btn-manual-capture').classList.remove('hidden');
+                document.getElementById('camera-overlay').classList.remove('border-white/40');
+                document.getElementById('camera-overlay').classList.add('border-emerald-400/80');
+                
+                reqAnimFrameId = requestAnimationFrame(scanLoop);
+                showToast("Câmera ligada! Aponte para os gabaritos.", "info");
+            } catch (err) {
+                console.error(err);
+                showToast("Erro ao acessar a câmera do dispositivo.", "error");
+            }
+        }
+
+        function stopCamera() {
+            if(videoEl && videoEl.srcObject) {
+                videoEl.srcObject.getTracks().forEach(t => t.stop());
+                videoEl.srcObject = null;
+            }
+            if (reqAnimFrameId) cancelAnimationFrame(reqAnimFrameId);
+            document.getElementById('btn-start-camera').classList.remove('hidden');
+            document.getElementById('btn-stop-camera').classList.add('hidden');
+            document.getElementById('btn-manual-capture').classList.add('hidden');
+            document.getElementById('camera-overlay').classList.add('border-white/40');
+            document.getElementById('camera-overlay').classList.remove('border-emerald-400/80');
+        }
+
+        function playBeep() {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if(!AudioContext) return;
+                const ctx = new AudioContext();
+                const osc = ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, ctx.currentTime);
+                osc.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.1);
+            } catch(e) { console.warn("Beep indisponível"); }
+        }
+
+        function flashOverlay() {
+            const overlay = document.getElementById('camera-overlay');
+            overlay.classList.remove('camera-flash');
+            void overlay.offsetWidth; // trigger reflow
+            overlay.classList.add('camera-flash');
+        }
+
+        function scanLoop() {
+            if (videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
+                scanCanvasCtx.canvas.width = 640;
+                scanCanvasCtx.canvas.height = 480;
+                scanCanvasCtx.drawImage(videoEl, 0, 0, 640, 480);
+                const imageData = scanCanvasCtx.getImageData(0, 0, 640, 480);
+                const code = jsQR(imageData.data, imageData.width, imageData.height);
+                
+                if (code && code.data) {
+                    const qrText = code.data.trim();
+                    if (!appState.scannedQRs.has(qrText)) {
+                        appState.scannedQRs.add(qrText);
+                        captureFrame(false, qrText); 
+                    }
+                }
+            }
+            reqAnimFrameId = requestAnimationFrame(scanLoop);
+        }
+
+        function captureFrame(isManual = false, foundName = '') {
+            if(videoEl.readyState !== videoEl.HAVE_ENOUGH_DATA) return;
+            
+            playBeep();
+            flashOverlay();
+
+            const canvas = document.createElement('canvas');
+            canvas.width = videoEl.videoWidth;
+            canvas.height = videoEl.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+            
+            const base64Str = canvas.toDataURL('image/jpeg', 0.85);
+            const id = 'c_' + Math.random().toString(36).substr(2, 9);
+            
+            appState.batchFiles.push({
+                id: id, file: null, base64: base64Str, status: 'pending',
+                name: foundName, score: 0, correctCount: 0, details: []
+            });
+            
+            document.getElementById('batch-empty').classList.add('hidden');
+            document.getElementById('batch-list').classList.remove('hidden');
+            
+            renderBatchList();
+            checkReadyState();
+            processQueue();
+        }
+
+        // --- Tab 3: Upload em Lote (Alternativa) ---
+        function handleFiles(event) {
+            const files = Array.from(event.target.files).filter(f => f.type.startsWith('image/'));
+            if (files.length === 0) return;
+
+            document.getElementById('batch-empty').classList.add('hidden');
+            document.getElementById('batch-list').classList.remove('hidden');
+
+            files.forEach(file => {
+                const id = 'f_' + Math.random().toString(36).substr(2, 9);
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    appState.batchFiles.push({
+                        id: id, file: file, base64: e.target.result, status: 'pending',
+                        name: '', score: 0, correctCount: 0, details: []
+                    });
+                    renderBatchList();
+                    checkReadyState();
+                };
+                reader.readAsDataURL(file);
+            });
+            event.target.value = '';
+        }
+
+        function renderBatchList() {
+            const list = document.getElementById('batch-list');
+            list.innerHTML = '';
+            document.getElementById('queue-counter').textContent = `${appState.batchFiles.length} arquiv.`;
+            
+            appState.batchFiles.forEach(item => {
+                let statusIcon = `<i data-lucide="clock" class="w-5 h-5 text-slate-400"></i>`;
+                if (item.status === 'loading') statusIcon = `<div class="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div>`;
+                else if (item.status === 'success') statusIcon = `<div class="flex flex-col items-end"><span class="text-emerald-600 font-bold">${item.score}%</span><span class="text-xs text-slate-500">${item.correctCount}/${appState.numQuestions}</span></div>`;
+                else if (item.status === 'error') statusIcon = `<i data-lucide="alert-circle" class="w-5 h-5 text-red-500"></i>`;
+
+                const imgSrc = item.base64 || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23e2e8f0"/><path d="M12 25l6-6 6 6m-6-6v12" stroke="%2394a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+                const fileName = item.name ? `Prova: ${item.name}` : (item.file ? item.file.name : 'Imagem Capturada');
+
+                const li = document.createElement('li');
+                li.className = "flex items-center justify-between p-3 hover:bg-slate-50 transition-colors";
+                li.innerHTML = `
+                    <div class="flex items-center gap-3 overflow-hidden">
+                        <img src="${imgSrc}" class="w-10 h-10 object-cover rounded border border-slate-200 shrink-0">
+                        <span class="text-xs text-slate-700 font-medium truncate">${fileName}</span>
+                    </div>
+                    <div class="shrink-0 ml-3">${statusIcon}</div>
+                `;
+                list.appendChild(li);
+            });
+            lucide.createIcons();
+        }
+
+        function checkReadyState() {
+            const configuredAns = Object.values(appState.officialKey).filter(v => v.answer !== "").length;
+            const hasKey = configuredAns > 0;
+            const hasPending = appState.batchFiles.some(f => f.status === 'pending');
+            const btnProcessManual = document.getElementById('btn-process-manual');
+            const badge = document.getElementById('key-status-badge');
+
+            if (configuredAns === appState.numQuestions) {
+                badge.textContent = "Completo";
+                badge.className = "px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700";
+            } else if (hasKey) {
+                badge.textContent = "Incompleto";
+                badge.className = "px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700";
+            } else {
+                badge.textContent = "Faltando";
+                badge.className = "px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700";
+            }
+
+            if(btnProcessManual) {
+                btnProcessManual.disabled = !(hasKey && hasPending && !appState.isProcessingQueue);
+            }
+            
+            const btnJump = document.getElementById('btn-jump-report');
+            if(appState.batchFiles.some(f => f.status === 'success')) {
+                document.getElementById('tab-report').classList.remove('hidden');
+                document.getElementById('tab-report').classList.add('flex');
+                btnJump.classList.remove('hidden');
+            } else {
+                btnJump.classList.add('hidden');
+            }
+        }
+
+        // --- Processador de Fila Contínua (Async) ---
+        async function processQueue() {
+            if(appState.isProcessingQueue) return; 
+            
+            const summaryDiv = document.getElementById('batch-summary');
+            const summaryText = document.getElementById('summary-text');
+            
+            const hasKey = Object.values(appState.officialKey).filter(v => v.answer !== "").length > 0;
+            if(!hasKey) {
+                showToast("Cadastre o Gabarito Oficial primeiro!", "error");
+                return;
+            }
+
+            appState.isProcessingQueue = true;
+            summaryDiv.classList.remove('hidden');
+            checkReadyState();
+
+            while(true) {
+                const item = appState.batchFiles.find(f => f.status === 'pending');
+                if(!item) break; 
+
+                item.status = 'loading';
+                renderBatchList();
+                summaryText.textContent = `Lendo prova de ${item.name || 'aluno desconhecido'}...`;
+
+                try {
+                    if(!item.name) {
+                        let qrData = await extractQRCodeFromImage(item.base64);
+                        if(qrData) item.name = qrData;
+                    }
+
+                    const geminiData = await callGeminiVision(item.base64);
+                    
+                    if (!item.name) item.name = geminiData.aluno_nome_impresso || `Aluno Genérico`;
+                    
+                    const results = gradeTest(geminiData.respostas);
+                    item.score = results.percentage;
+                    item.correctCount = results.correct;
+                    item.details = results.details;
+                    item.status = 'success';
+                    
+                } catch (error) {
+                    console.error("Falha ao processar a prova: ", error);
+                    item.status = 'error';
+                }
+                
+                renderBatchList();
+                renderReport(); 
+                saveDataLocally();
+            }
+
+            appState.isProcessingQueue = false;
+            summaryDiv.classList.add('hidden');
+            checkReadyState();
+        }
+
+        function extractQRCodeFromImage(base64Str) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.getElementById('qr-canvas');
+                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                    let w = img.width, h = img.height;
+                    const maxDim = 1200;
+                    if (w > maxDim || h > maxDim) {
+                        const ratio = Math.min(maxDim/w, maxDim/h);
+                        w *= ratio; h *= ratio;
+                    }
+                    canvas.width = w; canvas.height = h;
+                    ctx.drawImage(img, 0, 0, w, h);
+                    const imageData = ctx.getImageData(0, 0, w, h);
+                    try {
+                        const code = jsQR(imageData.data, imageData.width, imageData.height);
+                        resolve(code && code.data ? code.data.trim() : null);
+                    } catch(e) { resolve(null); }
+                };
+                img.onerror = () => resolve(null);
+                img.src = base64Str;
+            });
+        }
+
+        async function callGeminiVision(base64Image) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            
+            let formatContext = "";
+            for (let i = 1; i <= appState.numQuestions; i++) {
+                const qType = appState.officialKey[i] ? appState.officialKey[i].type : 'MC5';
+                formatContext += `Q${i}: Opções ${QUESTION_TYPES[qType].options.join(',')}. `;
+            }
+
+            const prompt = `
+Sistema OCR de alta precisão para provas escolares.
+A prova tem ${appState.numQuestions} questões.
+1. Se achar nome escrito do aluno, retorne.
+2. Identifique a marcação de bolinha de cada questão (pode ser um X claro, um círculo preenchido, ou um carimbo/desenho isolado em cima de uma opção).
+ATENÇÃO AOS TIPOS DE QUESTÃO:
+${formatContext}
+Múltiplas opções marcadas ou borrões que invalidam a leitura = "NULA".
+`;
+            const payload = {
+                contents: [{
+                    role: "user",
+                    parts: [{ text: prompt }, { inlineData: { mimeType: "image/jpeg", data: base64Image.split(',')[1] } }]
+                }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            aluno_nome_impresso: { type: "STRING" },
+                            respostas: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        questao: { type: "INTEGER" },
+                                        resposta: { type: "STRING" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            let retries = 0; const delays = [1000, 2000, 4000];
+            while (retries <= delays.length) {
+                try {
+                    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    if (!response.ok) throw new Error("API Error");
+                    const result = await response.json();
+                    const parsedData = JSON.parse(result.candidates[0].content.parts[0].text);
+                    const dict = {};
+                    if(parsedData.respostas) {
+                        parsedData.respostas.forEach(item => {
+                            if (item.questao) dict[item.questao] = item.resposta ? item.resposta.toUpperCase() : "NULA";
+                        });
+                    }
+                    return { aluno_nome_impresso: parsedData.aluno_nome_impresso || "", respostas: dict };
+                } catch (error) {
+                    if (retries === delays.length) throw error;
+                    await new Promise(res => setTimeout(res, delays[retries]));
+                    retries++;
+                }
+            }
+        }
+
+        function gradeTest(scannedAnswers) {
+            let correctCount = 0;
+            const details = [];
+
+            for (let i = 1; i <= appState.numQuestions; i++) {
+                const official = appState.officialKey[i] ? appState.officialKey[i].answer : "-";
+                const scanned = scannedAnswers[i] || "NULA";
+                const isCorrect = (official === scanned && official !== "" && official !== "-");
+                
+                if (isCorrect) correctCount++;
+                details.push({ q: i, scanned: scanned, official: official, correct: isCorrect });
+            }
+            return {
+                correct: correctCount,
+                percentage: Math.round((correctCount / appState.numQuestions) * 100),
+                details: details
+            };
+        }
+
+        // --- Tab 4: Relatório e Estatísticas ---
+        function renderReport() {
+            const successItems = appState.batchFiles.filter(f => f.status === 'success');
+            const tbody = document.getElementById('ranking-table-body');
+            const emptyState = document.getElementById('report-empty');
+            
+            if (successItems.length === 0) {
+                tbody.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                document.getElementById('stat-total-students').textContent = '0';
+                return;
+            }
+            emptyState.classList.add('hidden');
+
+            let totalScore = 0;
+            const qStats = {}; 
+            
+            for(let i=1; i<=appState.numQuestions; i++) qStats[i] = { hits: 0 };
+
+            successItems.forEach(item => {
+                totalScore += item.score;
+                item.details.forEach(d => { if(d.correct) qStats[d.q].hits++; });
+            });
+
+            const avgScore = Math.round(totalScore / successItems.length);
+            
+            let bestQ = 1, worstQ = 1;
+            let maxHits = -1, minHits = 999999;
+            
+            for(let i=1; i<=appState.numQuestions; i++) {
+                if (appState.officialKey[i] && appState.officialKey[i].answer !== "") {
+                    const hits = qStats[i].hits;
+                    if(hits > maxHits) { maxHits = hits; bestQ = i; }
+                    if(hits < minHits) { minHits = hits; worstQ = i; }
+                }
+            }
+
+            document.getElementById('stat-total-students').textContent = successItems.length;
+            document.getElementById('stat-avg-score').textContent = `${avgScore}%`;
+            
+            const pctBest = Math.round((maxHits / successItems.length) * 100) || 0;
+            const pctWorst = Math.round((minHits / successItems.length) * 100) || 0;
+            
+            document.getElementById('stat-best-q').textContent = `Q${bestQ}`;
+            document.getElementById('stat-best-q-val').textContent = `${pctBest}% Acerto`;
+            document.getElementById('stat-worst-q').textContent = `Q${worstQ}`;
+            document.getElementById('stat-worst-q-val').textContent = `${100-pctWorst}% Erro`;
+
+            successItems.sort((a, b) => b.score - a.score); 
+            
+            tbody.innerHTML = '';
+            successItems.forEach((item, index) => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 transition-colors";
+                
+                let medal = index + 1;
+                if(index === 0) medal = `🥇`; else if(index === 1) medal = `🥈`; else if(index === 2) medal = `🥉`;
+                let scoreColor = item.score >= 70 ? 'text-emerald-600' : (item.score >= 50 ? 'text-amber-600' : 'text-red-600');
+
+                tr.innerHTML = `
+                    <td class="p-4 text-center font-bold text-slate-500">${medal}</td>
+                    <td class="p-4 font-medium text-slate-800 uppercase truncate max-w-[200px]" title="${item.name}">${item.name}</td>
+                    <td class="p-4 text-center">${item.correctCount}/${appState.numQuestions}</td>
+                    <td class="p-4 text-center font-bold ${scoreColor} text-base">${item.score}%</td>
+                    <td class="p-4 text-right">
+                        <button onclick="openModal('${item.id}')" class="text-indigo-600 hover:text-indigo-800 text-xs font-medium mr-3">Detalhes</button>
+                        <button onclick="deleteRecord('${item.id}', '${item.name}')" class="text-red-500 hover:text-red-700 text-xs font-medium"><i data-lucide="trash-2" class="w-4 h-4 inline"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+            lucide.createIcons();
+        }
+
+        function openModal(id) {
+            const item = appState.batchFiles.find(f => f.id === id);
+            if(!item) return;
+
+            document.getElementById('modal-student-name').textContent = item.name;
+            document.getElementById('modal-student-score').textContent = item.score + '%';
+            document.getElementById('modal-student-correct').textContent = item.correctCount + '/' + appState.numQuestions;
+            
+            const tbody = document.getElementById('modal-details-body');
+            tbody.innerHTML = '';
+            
+            item.details.forEach(d => {
+                const tr = document.createElement('tr');
+                let statusIcon = d.correct ? `<i data-lucide="check" class="w-4 h-4 text-emerald-500 mx-auto"></i>` : `<i data-lucide="x" class="w-4 h-4 text-red-500 mx-auto"></i>`;
+                let scannedClass = d.scanned === 'NULA' ? 'text-slate-400' : (d.correct ? 'text-emerald-600' : 'text-red-600');
+                
+                tr.innerHTML = `
+                    <td class="py-2 font-medium">${d.q}</td>
+                    <td class="py-2 font-bold text-slate-700">${d.official}</td>
+                    <td class="py-2 font-bold ${scannedClass}">${d.scanned}</td>
+                    <td class="py-2">${statusIcon}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+            lucide.createIcons();
+            document.getElementById('modal-details').classList.remove('hidden');
+            document.getElementById('modal-details').classList.add('flex');
+        }
+
+        function closeModal() {
+            document.getElementById('modal-details').classList.add('hidden');
+            document.getElementById('modal-details').classList.remove('flex');
+        }
+
+        function deleteRecord(id, qrName) {
+            openConfirmModal("Deseja excluir a nota deste aluno?", () => {
+                appState.batchFiles = appState.batchFiles.filter(f => f.id !== id);
+                if(qrName) appState.scannedQRs.delete(qrName); // Libera o QR pra ser escaneado novamente via Câmera
+                renderReport(); 
+                renderBatchList(); 
+                saveDataLocally(); 
+                showToast("Nota excluída.", "info");
+            });
+        }
+
+        function printFinalReport() {
+            const successItems = appState.batchFiles.filter(f => f.status === 'success');
+            successItems.sort((a, b) => b.score - a.score); 
+
+            const tbody = document.getElementById('print-report-body');
+            tbody.innerHTML = '';
+            let total = 0;
+
+            successItems.forEach((item, idx) => {
+                total += item.score;
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="p-2 border border-slate-300 text-center">${idx + 1}</td>
+                    <td class="p-2 border border-slate-300 font-medium uppercase">${item.name}</td>
+                    <td class="p-2 border border-slate-300 text-center">${item.correctCount}/${appState.numQuestions}</td>
+                    <td class="p-2 border border-slate-300 text-center font-bold">${item.score}%</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('print-report-date').textContent = new Date().toLocaleDateString('pt-BR');
+            document.getElementById('print-report-count').textContent = successItems.length;
+            document.getElementById('print-report-avg').textContent = successItems.length > 0 ? Math.round(total / successItems.length) + '%' : '0%';
+
+            document.body.classList.add('printing-report');
+            window.print();
+            document.body.classList.remove('printing-report');
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            const msgEl = document.getElementById('toast-message');
+            const iconContainer = document.getElementById('toast-icon-container');
+            
+            msgEl.textContent = message;
+            let iconName = 'info'; let iconColorClass = 'text-indigo-400';
+            if (type === 'success') { iconName = 'check-circle'; iconColorClass = 'text-emerald-400'; } 
+            else if (type === 'warning') { iconName = 'alert-circle'; iconColorClass = 'text-amber-400'; } 
+            else if (type === 'error') { iconName = 'x-circle'; iconColorClass = 'text-red-400'; }
+
+            iconContainer.innerHTML = `<i data-lucide="${iconName}" class="w-5 h-5 ${iconColorClass}"></i>`;
+            lucide.createIcons();
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 3500);
+        }
+    </script>
+</body>
+</html>
