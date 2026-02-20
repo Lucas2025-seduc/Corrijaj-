@@ -1269,13 +1269,19 @@
             }
 
             const prompt = `
-Sistema OCR de alta precisão para provas escolares.
-A prova tem ${appState.numQuestions} questões.
-1. Se achar nome escrito do aluno, retorne.
-2. Identifique a marcação de bolinha de cada questão (pode ser um X claro, um círculo preenchido, ou um carimbo/desenho isolado em cima de uma opção).
-ATENÇÃO AOS TIPOS DE QUESTÃO:
+Atue como um corretor automático de gabaritos de altíssima precisão.
+Analise a imagem da folha de respostas. Ela possui EXATAMENTE ${appState.numQuestions} questões.
+Atenção: A imagem pode ser uma foto tirada da tela de um computador (com linhas e ruídos). Ignore os ruídos e foque apenas nos círculos/alternativas.
+
+Sua tarefa:
+1. Extraia o NOME do aluno impresso ou escrito.
+2. Para CADA questão (de 1 a ${appState.numQuestions}), identifique qual alternativa está assinalada.
+- Considere válida a alternativa que estiver preenchida de escuro, com um X claro ou com algum carimbo em cima.
+- Se a questão estiver em branco, retorne "NULA".
+- Se houver mais de uma alternativa marcada na mesma questão (rasura), retorne "NULA".
+
+Limites de alternativas por questão:
 ${formatContext}
-Múltiplas opções marcadas ou borrões que invalidam a leitura = "NULA".
 `;
             const payload = {
                 contents: [{
@@ -1309,11 +1315,16 @@ Múltiplas opções marcadas ou borrões que invalidam a leitura = "NULA".
                     const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                     if (!response.ok) throw new Error("API Error");
                     const result = await response.json();
-                    const parsedData = JSON.parse(result.candidates[0].content.parts[0].text);
+                    
+                    let textResp = result.candidates[0].content.parts[0].text;
+                    // Limpeza robusta contra marcações markdown que quebram o JSON em algumas respostas da API
+                    textResp = textResp.replace(/^```(json)?/gi, '').replace(/```$/g, '').trim();
+                    
+                    const parsedData = JSON.parse(textResp);
                     const dict = {};
                     if(parsedData.respostas) {
                         parsedData.respostas.forEach(item => {
-                            if (item.questao) dict[item.questao] = item.resposta ? item.resposta.toUpperCase() : "NULA";
+                            if (item.questao) dict[item.questao] = item.resposta ? item.resposta.trim().toUpperCase() : "NULA";
                         });
                     }
                     return { aluno_nome_impresso: parsedData.aluno_nome_impresso || "", respostas: dict };
@@ -1330,8 +1341,12 @@ Múltiplas opções marcadas ou borrões que invalidam a leitura = "NULA".
             const details = [];
 
             for (let i = 1; i <= appState.numQuestions; i++) {
-                const official = appState.officialKey[i] ? appState.officialKey[i].answer : "-";
-                const scanned = scannedAnswers[i] || "NULA";
+                const officialRaw = appState.officialKey[i] ? appState.officialKey[i].answer : "-";
+                const scannedRaw = scannedAnswers[i] || "NULA";
+                
+                const official = typeof officialRaw === 'string' ? officialRaw.trim().toUpperCase() : "-";
+                const scanned = typeof scannedRaw === 'string' ? scannedRaw.trim().toUpperCase() : "NULA";
+                
                 const isCorrect = (official === scanned && official !== "" && official !== "-");
                 
                 if (isCorrect) correctCount++;
