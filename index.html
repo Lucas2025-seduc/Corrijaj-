@@ -238,7 +238,7 @@
                     <!-- Modo Câmera -->
                     <div id="mode-camera-container" class="flex flex-col flex-1">
                         <p class="text-slate-500 text-xs mb-2">Aponte para o gabarito. O QR Code dispara a captura automática.</p>
-                        <div class="relative bg-black rounded-xl overflow-hidden aspect-[3/4] flex items-center justify-center mb-4 border border-slate-200">
+                        <div class="relative bg-black rounded-xl overflow-hidden h-64 sm:h-80 md:h-96 flex items-center justify-center mb-4 border border-slate-200">
                             <video id="camera-video" class="absolute inset-0 w-full h-full object-cover" playsinline></video>
                             
                             <!-- Overlay de alinhamento e flash -->
@@ -1116,18 +1116,34 @@
                 const imgSrc = item.base64 || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23e2e8f0"/><path d="M12 25l6-6 6 6m-6-6v12" stroke="%2394a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
                 const fileName = item.name ? `Prova: ${item.name}` : (item.file ? item.file.name : 'Imagem Capturada');
 
+                let actionBtn = `<button onclick="removeFromQueue('${item.id}', '${item.name}')" class="p-1.5 text-slate-400 hover:text-red-500 rounded transition-colors" title="Excluir captura"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`;
+
                 const li = document.createElement('li');
                 li.className = "flex items-center justify-between p-3 hover:bg-slate-50 transition-colors";
                 li.innerHTML = `
-                    <div class="flex items-center gap-3 overflow-hidden">
+                    <div class="flex items-center gap-3 overflow-hidden flex-1">
                         <img src="${imgSrc}" class="w-10 h-10 object-cover rounded border border-slate-200 shrink-0">
                         <span class="text-xs text-slate-700 font-medium truncate">${fileName}</span>
                     </div>
-                    <div class="shrink-0 ml-3">${statusIcon}</div>
+                    <div class="flex items-center gap-3 shrink-0 ml-3">
+                        ${statusIcon}
+                        ${actionBtn}
+                    </div>
                 `;
                 list.appendChild(li);
             });
             refreshIcons();
+        }
+
+        function removeFromQueue(id, qrName) {
+            appState.batchFiles = appState.batchFiles.filter(f => f.id !== id);
+            if(qrName && qrName !== 'undefined' && qrName !== 'null') {
+                appState.scannedQRs.delete(qrName); // Libera o QR para ser lido de novo
+            }
+            renderBatchList();
+            renderReport(); // Atualiza relatório caso a prova apagada estivesse lá
+            checkReadyState();
+            saveDataLocally();
         }
 
         function checkReadyState() {
