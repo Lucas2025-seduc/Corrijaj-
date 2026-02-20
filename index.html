@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AutoGabarito IA - Pro</title>
+    <title>Corrijejá</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Atualizado o link da biblioteca Lucide para a versão UMD global e garantido carregamento seguro -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     
@@ -92,14 +93,14 @@
         }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-800 min-h-screen font-sans">
+<body class="bg-slate-50 text-slate-800 min-h-screen font-sans flex flex-col">
 
     <!-- Header -->
     <header class="bg-indigo-600 text-white shadow-md no-print">
         <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
             <div class="flex items-center gap-2">
                 <i data-lucide="check-square" class="w-8 h-8"></i>
-                <h1 class="text-2xl font-bold tracking-tight">AutoGabarito IA</h1>
+                <h1 class="text-2xl font-bold tracking-tight">Corrijejá</h1>
             </div>
             <nav class="flex gap-1 bg-indigo-700/50 p-1 rounded-lg overflow-x-auto">
                 <button onclick="switchTab('template')" id="tab-template" class="px-4 py-2 rounded-md font-medium text-sm transition-colors bg-white text-indigo-700 shadow-sm whitespace-nowrap">Modelos & Turma</button>
@@ -358,6 +359,11 @@
         </section>
     </main>
 
+    <!-- Rodapé -->
+    <footer class="mt-auto py-6 text-center text-sm font-medium text-slate-500 no-print">
+        aplicativo desenvolvido pelo professor Lucas Sebastião Barbosa Silva
+    </footer>
+
     <!-- Modal Detalhes do Aluno -->
     <div id="modal-details" class="fixed inset-0 bg-slate-900/50 hidden items-center justify-center z-50 p-4">
         <div class="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
@@ -475,7 +481,10 @@
 
             loadLocalData();
             initConfig();
-            lucide.createIcons();
+            
+            // Garantir renderização dos ícones ao iniciar
+            refreshIcons();
+            
             renderOfficialKeyInputs();
             renderClassDropdown(); // Renderiza turmas carregadas
             updateTemplatePreview();
@@ -486,6 +495,16 @@
                 if(f.name && f.status !== 'error') appState.scannedQRs.add(f.name);
             });
         });
+
+        // Função segura para recarregar ícones evitando erro de "undefined"
+        function refreshIcons() {
+            if (typeof window.lucide !== 'undefined') {
+                window.lucide.createIcons();
+            } else {
+                // Tenta novamente em caso de atraso na rede
+                setTimeout(refreshIcons, 100);
+            }
+        }
 
         function saveDataLocally() {
             try {
@@ -1108,7 +1127,7 @@
                 `;
                 list.appendChild(li);
             });
-            lucide.createIcons();
+            refreshIcons();
         }
 
         function checkReadyState() {
@@ -1380,7 +1399,7 @@ Múltiplas opções marcadas ou borrões que invalidam a leitura = "NULA".
                 `;
                 tbody.appendChild(tr);
             });
-            lucide.createIcons();
+            refreshIcons();
         }
 
         function openModal(id) {
@@ -1407,7 +1426,7 @@ Múltiplas opções marcadas ou borrões que invalidam a leitura = "NULA".
                 `;
                 tbody.appendChild(tr);
             });
-            lucide.createIcons();
+            refreshIcons();
             document.getElementById('modal-details').classList.remove('hidden');
             document.getElementById('modal-details').classList.add('flex');
         }
@@ -1469,7 +1488,7 @@ Múltiplas opções marcadas ou borrões que invalidam a leitura = "NULA".
             else if (type === 'error') { iconName = 'x-circle'; iconColorClass = 'text-red-400'; }
 
             iconContainer.innerHTML = `<i data-lucide="${iconName}" class="w-5 h-5 ${iconColorClass}"></i>`;
-            lucide.createIcons();
+            refreshIcons();
             toast.classList.remove('translate-y-20', 'opacity-0');
             setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 3500);
         }
