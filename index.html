@@ -1222,6 +1222,8 @@
                 } catch (error) {
                     console.error("Falha ao processar a prova: ", error);
                     item.status = 'error';
+                    // Salva a mensagem exata do erro para mostrar ao utilizador
+                    item.errorMsg = error.message || "Erro desconhecido na comunicação com a IA.";
                 }
                 
                 renderBatchList();
@@ -1260,7 +1262,6 @@
         }
 
         async function callGeminiVision(base64Image) {
-            // ATUALIZADO PARA O MODELO DE PRODUÇÃO OFICIAL (Evita erros no Vercel)
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
             
             let formatContext = "";
@@ -1269,7 +1270,6 @@
                 formatContext += `Q${i}: Opções ${QUESTION_TYPES[qType].options.join(',')}. `;
             }
 
-            // ATUALIZADO PARA ACEITAR CARIMBOS DIGITAIS E RABISCOS FORTES
             const prompt = `
 Atue como um corretor automático de gabaritos escolares de altíssima precisão.
 Analise a imagem da folha de respostas com EXATAMENTE ${appState.numQuestions} questões.
@@ -1286,11 +1286,23 @@ Sua tarefa:
 Limites:
 ${formatContext}
 `;
+            // Deteção Dinâmica do Tipo de Imagem (PNG/JPEG/WEBP) para evitar Erro 400
+            const mimeTypeMatch = base64Image.match(/data:(.*?);/);
+            const imgMimeType = mimeTypeMatch ? mimeTypeMatch[1] : "image/jpeg";
+            const rawBase64 = base64Image.includes(',') ? base64Image.split(',')[1] : base64Image;
+
             const payload = {
                 contents: [{
                     role: "user",
-                    parts: [{ text: prompt }, { inlineData: { mimeType: "image/jpeg", data: base64Image.split(',')[1] } }]
+                    parts: [{ text: prompt }, { inlineData: { mimeType: imgMimeType, data: rawBase64 } }]
                 }],
+                // Desligar filtros de segurança para evitar bloqueios falsos-positivos
+                safetySettings: [
+                    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                ],
                 generationConfig: {
                     responseMimeType: "application/json",
                     responseSchema: {
@@ -1312,15 +1324,21 @@ ${formatContext}
                 }
             };
 
-            let retries = 0; const delays = [1000, 2000, 4000];
+            // Aumento nos tempos de espera para lidar com Rate Limit (Muitos envios de uma vez)
+            let retries = 0; const delays = [2000, 4000, 8000, 15000]; 
             while (retries <= delays.length) {
                 try {
                     const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                    if (!response.ok) throw new Error("API Error");
+                    
+                    if (!response.ok) {
+                        const errData = await response.json().catch(() => ({}));
+                        const errMsg = errData?.error?.message || response.statusText;
+                        throw new Error(`Código ${response.status}: ${errMsg}`);
+                    }
+                    
                     const result = await response.json();
                     
                     let textResp = result.candidates[0].content.parts[0].text;
-                    // Limpeza robusta contra marcações markdown que quebram o JSON em algumas respostas da API
                     textResp = textResp.replace(/^```(json)?/gi, '').replace(/```$/g, '').trim();
                     
                     const parsedData = JSON.parse(textResp);
@@ -1333,10 +1351,63 @@ ${formatContext}
                     return { aluno_nome_impresso: parsedData.aluno_nome_impresso || "", respostas: dict };
                 } catch (error) {
                     if (retries === delays.length) throw error;
+                    console.warn(`Tentativa ${retries + 1} falhou. Tentando novamente... Erro: ${error.message}`);
                     await new Promise(res => setTimeout(res, delays[retries]));
                     retries++;
                 }
             }
+        }
+
+        // --- Restante das Funções de Renderização e Relatório ---
+        
+        function renderBatchList() {
+            const list = document.getElementById('batch-list');
+            list.innerHTML = '';
+            document.getElementById('queue-counter').textContent = `${appState.batchFiles.length} arquiv.`;
+            
+            appState.batchFiles.forEach(item => {
+                let statusIcon = `<i data-lucide="clock" class="w-5 h-5 text-slate-400"></i>`;
+                if (item.status === 'loading') {
+                    statusIcon = `<div class="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div>`;
+                } else if (item.status === 'success') {
+                    statusIcon = `<div class="flex flex-col items-end"><span class="text-emerald-600 font-bold">${item.score}%</span><span class="text-xs text-slate-500">${item.correctCount}/${appState.numQuestions}</span></div>`;
+                } else if (item.status === 'error') {
+                    // Botão Clicável de Erro para visualização detalhada
+                    const errorMsgSafe = (item.errorMsg || 'Erro desconhecido').replace(/'/g, "\\'");
+                    statusIcon = `<button onclick="showToast('${errorMsgSafe}', 'error')" class="p-1 text-red-500 hover:bg-red-50 rounded" title="Clique para ver o motivo do erro"><i data-lucide="alert-circle" class="w-5 h-5"></i></button>`;
+                }
+
+                const imgSrc = item.base64 || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23e2e8f0"/><path d="M12 25l6-6 6 6m-6-6v12" stroke="%2394a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+                const fileName = item.name ? `Prova: ${item.name}` : (item.file ? item.file.name : 'Imagem Capturada');
+
+                let actionBtn = `<button onclick="removeFromQueue('${item.id}', '${item.name}')" class="p-1.5 text-slate-400 hover:text-red-500 rounded transition-colors" title="Excluir captura"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`;
+
+                const li = document.createElement('li');
+                li.className = "flex items-center justify-between p-3 hover:bg-slate-50 transition-colors";
+                li.innerHTML = `
+                    <div class="flex items-center gap-3 overflow-hidden flex-1">
+                        <img src="${imgSrc}" class="w-10 h-10 object-cover rounded border border-slate-200 shrink-0">
+                        <span class="text-xs text-slate-700 font-medium truncate">${fileName}</span>
+                    </div>
+                    <div class="flex items-center gap-3 shrink-0 ml-3">
+                        ${statusIcon}
+                        ${actionBtn}
+                    </div>
+                `;
+                list.appendChild(li);
+            });
+            refreshIcons();
+        }
+
+        function removeFromQueue(id, qrName) {
+            appState.batchFiles = appState.batchFiles.filter(f => f.id !== id);
+            if(qrName && qrName !== 'undefined' && qrName !== 'null') {
+                appState.scannedQRs.delete(qrName); // Libera o QR para ser lido de novo
+            }
+            renderBatchList();
+            renderReport(); 
+            checkReadyState();
+            saveDataLocally();
         }
 
         function gradeTest(scannedAnswers) {
@@ -1362,7 +1433,6 @@ ${formatContext}
             };
         }
 
-        // --- Tab 4: Relatório e Estatísticas ---
         function renderReport() {
             const successItems = appState.batchFiles.filter(f => f.status === 'success');
             const tbody = document.getElementById('ranking-table-body');
@@ -1524,7 +1594,7 @@ ${formatContext}
             iconContainer.innerHTML = `<i data-lucide="${iconName}" class="w-5 h-5 ${iconColorClass}"></i>`;
             refreshIcons();
             toast.classList.remove('translate-y-20', 'opacity-0');
-            setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 3500);
+            setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 5000); // 5 segundos para ler o erro com calma
         }
     </script>
 </body>
