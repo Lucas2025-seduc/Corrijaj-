@@ -770,8 +770,8 @@
                     <div class="print-marker" style="bottom: 10px; left: 10px; width: ${markerSize}; height: ${markerSize};"></div>
                     <div class="print-marker" style="bottom: 10px; right: 10px; width: ${markerSize}; height: ${markerSize};"></div>
 
-                    <!-- mt-2 adicional para afastar do teto nas páginas normais -->
-                    <div class="flex items-start justify-between border-slate-800 border-b-2 mb-4 pb-2 mt-2">
+                    <!-- Margem de segurança aplicada aqui para descolar o texto dos quadrados pretos -->
+                    <div class="flex items-start justify-between border-slate-800 border-b-2 mb-4 pb-2" style="margin-top: ${isCompact ? '20px' : '40px'};">
                         <div class="flex-1 pr-2 min-w-0">
                             <h1 class="font-bold uppercase mb-1 tracking-wider ${isCompact ? 'text-[11px]' : 'text-2xl'}">Folha de Respostas</h1>
                             <div class="flex items-end mb-1 ${isCompact ? 'text-[10px]' : 'text-lg'} w-full">
@@ -1260,7 +1260,8 @@
         }
 
         async function callGeminiVision(base64Image) {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            // ATUALIZADO PARA O MODELO DE PRODUÇÃO OFICIAL (Evita erros no Vercel)
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
             
             let formatContext = "";
             for (let i = 1; i <= appState.numQuestions; i++) {
@@ -1268,19 +1269,21 @@
                 formatContext += `Q${i}: Opções ${QUESTION_TYPES[qType].options.join(',')}. `;
             }
 
+            // ATUALIZADO PARA ACEITAR CARIMBOS DIGITAIS E RABISCOS FORTES
             const prompt = `
-Atue como um corretor automático de gabaritos de altíssima precisão.
-Analise a imagem da folha de respostas. Ela possui EXATAMENTE ${appState.numQuestions} questões.
-Atenção: A imagem pode ser uma foto tirada da tela de um computador (com linhas e ruídos). Ignore os ruídos e foque apenas nos círculos/alternativas.
+Atue como um corretor automático de gabaritos escolares de altíssima precisão.
+Analise a imagem da folha de respostas com EXATAMENTE ${appState.numQuestions} questões.
+
+REGRAS DE AVALIAÇÃO OBRIGATÓRIAS:
+1. Considere como RESPOSTA VÁLIDA qualquer marcação clara e intencional sobre a letra. Isso inclui: bolinha preenchida, um "X", um rabisco denso/grosso (mesmo que passe da borda), ou ícones/carimbos digitais (como mãos, símbolos).
+2. Se o rabisco cobrir intencionalmente uma única letra, identifique essa letra como a escolhida.
+3. Retorne "NULA" APENAS se: a questão estiver 100% em branco, OU se houver DUAS ou mais letras diferentes com marcações claras na mesma questão.
 
 Sua tarefa:
-1. Extraia o NOME do aluno impresso ou escrito.
-2. Para CADA questão (de 1 a ${appState.numQuestions}), identifique qual alternativa está assinalada.
-- Considere válida a alternativa que estiver preenchida de escuro, com um X claro ou com algum carimbo em cima.
-- Se a questão estiver em branco, retorne "NULA".
-- Se houver mais de uma alternativa marcada na mesma questão (rasura), retorne "NULA".
+1. Extraia o NOME do aluno.
+2. Identifique a alternativa marcada para cada questão.
 
-Limites de alternativas por questão:
+Limites:
 ${formatContext}
 `;
             const payload = {
