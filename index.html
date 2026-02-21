@@ -446,9 +446,14 @@
 
     <script>
         // --- Constantes e Globais ---
-        // IMPORTANTE: Cole a chave que você copiou do Google Cloud aqui dentro das aspas!
-        const apiKey = "AIzaSyCRFKFo6n-JO-wZ1191cnOHQ6s1zM3voK8"; 
+        const apiKey = ""; // Obrigatório ficar vazio para o ambiente de testes
+        const userExternalKey = "AIzaSyCRFKFo6n-JO-wZ1191cnOHQ6s1zM3voK8"; // Sua chave real do projeto Corrijeja
         
+        // Sistema inteligente: detecta se está no editor de testes ou no seu computador/site
+        const isCanvasEnv = typeof __app_id !== 'undefined';
+        const activeKey = isCanvasEnv ? apiKey : userExternalKey;
+        const activeModel = isCanvasEnv ? "gemini-2.5-flash-preview-09-2025" : "gemini-1.5-flash";
+
         const QUESTION_TYPES = {
             'MC5': { label: 'Múltipla Escolha (A-E)', options: ['A','B','C','D','E'] },
             'MC4': { label: 'Múltipla Escolha (A-D)', options: ['A','B','C','D'] },
@@ -996,7 +1001,7 @@
         function flashOverlay() {
             const overlay = document.getElementById('camera-overlay');
             overlay.classList.remove('camera-flash');
-            void overlay.offsetWidth;
+            void overlay.offsetWidth; // trigger reflow
             overlay.classList.add('camera-flash');
         }
 
@@ -1178,7 +1183,6 @@
                 } catch (error) {
                     console.error("Falha ao processar a prova: ", error);
                     item.status = 'error';
-                    // Mostra o erro exato devolvido pela API do Google
                     showToast(`Erro na IA: ${error.message}`, "error");
                 }
                 
@@ -1218,8 +1222,7 @@
         }
 
         async function callGeminiVision(base64Image) {
-            // Lista de modelos públicos do Google. O app testará um por um automaticamente.
-            const modelsToTry = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${activeKey}`;
             
             let formatContext = "";
             for (let i = 1; i <= appState.numQuestions; i++) {
@@ -1262,48 +1265,29 @@ Múltiplas opções marcadas ou borrões que invalidam a leitura = "NULA".
                 }
             };
 
-            let lastError = null;
-
-            for (const modelName of modelsToTry) {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-                let retries = 0; 
-                const delays = [1000, 2000, 4000];
-
-                while (retries <= delays.length) {
-                    try {
-                        const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                        
-                        if (!response.ok) {
-                            const errorData = await response.json();
-                            throw new Error(errorData.error?.message || `Erro HTTP ${response.status}`);
-                        }
-                        
-                        const result = await response.json();
-                        const parsedData = JSON.parse(result.candidates[0].content.parts[0].text);
-                        const dict = {};
-                        if(parsedData.respostas) {
-                            parsedData.respostas.forEach(item => {
-                                if (item.questao) dict[item.questao] = item.resposta ? item.resposta.toUpperCase() : "NULA";
-                            });
-                        }
-                        return { aluno_nome_impresso: parsedData.aluno_nome_impresso || "", respostas: dict };
-                    } catch (error) {
-                        lastError = error;
-                        // Se o modelo não for encontrado, quebra o loop de retentativas e passa para o próximo modelo
-                        if (error.message.includes("not found") || error.message.includes("not supported")) {
-                            break; 
-                        }
-                        
-                        // Para outros erros (ex: limite da API), tenta de novo com delay
-                        if (retries === delays.length) break;
-                        await new Promise(res => setTimeout(res, delays[retries]));
-                        retries++;
+            let retries = 0; const delays = [1000, 2000, 4000, 8000, 16000];
+            while (retries <= delays.length) {
+                try {
+                    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error?.message || `Erro HTTP ${response.status}`);
                     }
+                    const result = await response.json();
+                    const parsedData = JSON.parse(result.candidates[0].content.parts[0].text);
+                    const dict = {};
+                    if(parsedData.respostas) {
+                        parsedData.respostas.forEach(item => {
+                            if (item.questao) dict[item.questao] = item.resposta ? item.resposta.toUpperCase() : "NULA";
+                        });
+                    }
+                    return { aluno_nome_impresso: parsedData.aluno_nome_impresso || "", respostas: dict };
+                } catch (error) {
+                    if (retries === delays.length) throw error;
+                    await new Promise(res => setTimeout(res, delays[retries]));
+                    retries++;
                 }
             }
-            
-            // Se testou todos os modelos da lista e nenhum funcionou, devolve o erro
-            throw lastError;
         }
 
         function gradeTest(scannedAnswers) {
@@ -1486,7 +1470,7 @@ Múltiplas opções marcadas ou borrões que invalidam a leitura = "NULA".
             iconContainer.innerHTML = `<i data-lucide="${iconName}" class="w-5 h-5 ${iconColorClass}"></i>`;
             lucide.createIcons();
             toast.classList.remove('translate-y-20', 'opacity-0');
-            setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 4500); // tempo de tela maior para ler os erros
+            setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 4500);
         }
     </script>
 </body>
