@@ -1205,12 +1205,22 @@
                     item.status = 'success';
                     
                 } catch (error) {
+                    console.error("Falha ao processar o teste: ", error);
                     item.status = 'error';
                 }
                 
                 renderBatchList();
                 renderReport(); 
                 saveDataLocally();
+
+                // INTERVALO DE SEGURANÇA (RATE LIMIT)
+                // Se houver mais provas na fila, aguardamos 4 segundos antes de enviar a próxima.
+                // Isto garante que ficamos dentro do limite de 15 pedidos/minuto da versão gratuita da API.
+                const hasMore = appState.batchFiles.some(f => f.status === 'pending');
+                if (hasMore) {
+                    summaryText.textContent = "A aguardar intervalo de segurança da API (4s)...";
+                    await new Promise(resolve => setTimeout(resolve, 4000));
+                }
             }
 
             appState.isProcessingQueue = false;
@@ -1290,12 +1300,18 @@ Múltiplas opções marcadas ou borrões que invalidam a leitura = "NULA".
             };
 
             let retries = 0; 
-            // Implementação de repetição exponencial conforme exigido para resiliência na API:
-            const delays = [1000, 2000, 4000, 8000, 16000];
+            // Implementação de repetição exponencial mais tolerante para resiliência na API:
+            // Espera 2s, 4s, 8s, 16s em caso de sobrecarga temporária da API
+            const delays = [2000, 4000, 8000, 16000];
             while (retries <= delays.length) {
                 try {
                     const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                    if (!response.ok) throw new Error("API Error");
+                    
+                    if (!response.ok) {
+                        const errText = await response.text();
+                        throw new Error(`API Error: ${response.status} - ${errText}`);
+                    }
+                    
                     const result = await response.json();
                     const parsedData = JSON.parse(result.candidates[0].content.parts[0].text);
                     const dict = {};
@@ -1306,10 +1322,12 @@ Múltiplas opções marcadas ou borrões que invalidam a leitura = "NULA".
                     }
                     return { aluno_nome_impresso: parsedData.aluno_nome_impresso || "", respostas: dict };
                 } catch (error) {
+                    console.warn(`Tentativa ${retries + 1} falhou na IA:`, error);
                     if (retries === delays.length) {
-                        showToast("Falha na ligação à API após várias tentativas.", "error");
+                        showToast("Falha na ligação à API após várias tentativas. Pode ter atingido o limite.", "error");
                         throw error;
                     }
+                    // Espera o tempo determinado e tenta novamente
                     await new Promise(res => setTimeout(res, delays[retries]));
                     retries++;
                 }
