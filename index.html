@@ -1019,8 +1019,10 @@
                 const vh = videoEl.videoHeight;
                 
                 if (vw > 0 && vh > 0) {
-                    // Mantém a proporção exata da câmara (evita que o QR Code fique esticado na vertical/horizontal)
-                    const maxDim = 800;
+                    // Mantém a proporção exata da câmara, suportando tanto horizontal como vertical.
+                    // Aumentamos a resolução interna para 1600px para que o QR Code não perca 
+                    // definição devido ao efeito moiré ao filmar monitores.
+                    const maxDim = 1600;
                     let w = vw, h = vh;
                     if (w > maxDim || h > maxDim) {
                         const ratio = Math.min(maxDim/w, maxDim/h);
@@ -1034,7 +1036,7 @@
                     
                     const imageData = scanCanvasCtx.getImageData(0, 0, w, h);
                     
-                    // attemptBoth melhora drasticamente a leitura em ecrãs (notebook/tablet) com brilho
+                    // "attemptBoth" é vital para ler QR codes diretamente de ecrãs iluminados com baixo contraste
                     const code = jsQR(imageData.data, w, h, { inversionAttempts: "attemptBoth" });
                     
                     if (code && code.data) {
@@ -1047,47 +1049,6 @@
                 }
             }
             reqAnimFrameId = requestAnimationFrame(scanLoop);
-        }
-
-        async function testAPIConnection() {
-            const apiKey = myPersonalKey; 
-            
-            // Modelo exato confirmado na sua lista!
-            const model = "gemini-3-flash-preview"; 
-
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-            console.log(`A testar ligação com o modelo ${model}...`);
-            showToast(`A testar ligação com ${model}...`, "info"); 
-
-            try {
-                const response = await fetch(url, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        contents: [{
-                            parts: [{ text: "Responda apenas com a palavra 'OK' se estiver a funcionar." }]
-                        }]
-                    }),
-                });
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    console.error("A API recusou a chamada. Detalhes:", JSON.stringify(data, null, 2));
-                    showToast("A API recusou a chamada. Verifique a consola.", "error");
-                    return;
-                }
-
-                console.log("🟢 SUCESSO! Resposta da IA:", data.candidates[0].content.parts[0].text);
-                showToast("SUCESSO! " + data.candidates[0].content.parts[0].text, "success");
-                
-            } catch (error) {
-                console.error("🔴 Erro de rede ou no código:", error);
-                showToast("Erro de rede. Verifique a consola.", "error");
-            }
         }
 
         function captureFrame(isManual = false, foundName = '') {
